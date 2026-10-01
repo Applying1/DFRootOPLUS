@@ -5,6 +5,7 @@ plugins {
 android {
     namespace = "df.root"
     compileSdk = 36
+    ndkVersion = "30.0.16138531"
 
     defaultConfig {
         applicationId = "df.root"

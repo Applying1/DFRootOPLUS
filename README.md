@@ -1,10 +1,12 @@
 > [!IMPORTANT]
-> If you want to use your own ksud binary, you must compile from my fork: https://github.com/diabl0w/KernelSU
+> This fork pairs with **[ReSukiSU](https://github.com/ReSukiSU/ReSukiSU)** (manager package `com.resukisu.resukisu`) instead of KernelSU. The bundled `ksud` is a shim that defers to ReSukiSU's `libksud.so`.
 
 # DFRoot [DirtyFrag (CVE-2026-43284)]
 
-The core of this code is fully credited to others. I merely combined ideas to make them all better 
-and added some small improvements/features. 
+Fork to root my emerald aka Poco M6 Pro (non-Samsung). Not tested on other devices.
+
+The core of this code is credited to others. This fork combines those pieces and adds a few small
+improvements/features.
 
 Credits:
 - Original PoC and various code: https://github.com/lsposed/lspromise
@@ -17,7 +19,7 @@ Credits:
 - Automatic soft reboot 
 - RO Partition Protection
 - Hide Selinux Modifications in KSU
-- Shizuku not needed — regain root without WiFi!
+- No Shizuku dependency — root can be regained without WiFi
 
 > [!WARNING]
 > I am not responsible for any damage to your device.
@@ -26,6 +28,8 @@ Credits:
 
 Ephemeral root for Samsung devices (and possibly others) w/ locked bootloaders vulnerable to DirtyFrag (CVE-2026-43284) 
 
+**Verified on a non-Samsung device:** Poco M6 Pro (emerald, MT6789), HyperOS, kernel `6.12.30-android16` — DEFEX kprobes silently no-op on non-Samsung kernels; everything else is generic GKI.
+
 | KMI Version | Verified |
 |---|---|
 | android12-5.10 | Untested |
@@ -33,15 +37,15 @@ Ephemeral root for Samsung devices (and possibly others) w/ locked bootloaders v
 | android13-5.15 | Untested |
 | android14-5.15 | Untested |
 | android14-6.1 | Untested |
-| android15-6.6 | Yes |
-| android16-6.12 | Yes |
+| android15-6.6 | Yes (Samsung) |
+| android16-6.12 | Yes (Samsung + Poco M6 Pro / Re:SU) |
 | android17-6.18 | Untested |
 
 ## How it works
 
 The Android kernel decrypts AES-CBC ESP packets directly into the page cache of files open for `splice()`. By crafting `IV = AES_ECB_DEC(key, current_content) ⊕ desired_content`, any 16-byte-aligned block in a mapped shared library can be overwritten without write permission and without copy-on-write.
 
-The exploit uses this primitive to patch shellcode into `libc++.so` and `libc.so` in the kernel's page cache. The next privileged call to those functions runs the shellcode and installs KernelSU.
+The exploit uses this primitive to patch shellcode into `libc++.so` in the kernel's page cache. The next privileged call to those functions runs the shellcode and loads the DirtyFrag kernel module, which brings up ReSukiSU.
 
 ### Exploit chain
 
@@ -51,23 +55,21 @@ The exploit uses this primitive to patch shellcode into `libc++.so` and `libc.so
 
 3. **dirtyfrag.ko → libbinderdebug.so** — The kernel module is written into `/vendor/lib64/libbinderdebug.so` with `vendor_file` label that can be modprobe'd
 
-4. **libc++ hook** (runs in init, uid=0, tid=1) — entrypoint via createorphanprocess. patched with shellcode that forks, sets the child's SELinux exec context to `u:r:vendor_modprobe:s0`, and execs `/vendor/bin/modprobe`.
+4. **libc++ hook** (runs in init, uid=0, tid=1) — entrypoint via createorphanprocess. Patched with shellcode that forks, sets the child's SELinux exec context to `u:r:vendor_modprobe:s0`, and directly execs `/vendor/bin/insmod` with the patched vendor lib as the module (vendor_modprobe is allowed to `finit_module`).
 
-5. **libc hook** (runs in vendor_modprobe, uid=0) — Shellcode patched into `__libc_init`. When vendor_modprobe starts:
-   - Calls `finit_module` to load dirtyfrag.ko
-   - Opens ksud from the app's memfd via `/proc/<pid>/fd/<n>`, copies to `/dev/.ksud` and `/data/system/ksud`
-   - Unshares mount namespace, bind-mounts `/dev/.ksud` over `/system/bin/logcat` (DEFEX bypass via trusted path)
-   - Forks and execs ksud through the bind-mounted path
+5. **dirtyfrag.ko init** — resolves `kallsyms_lookup_name` via the kprobe trick, sets `selinux_state` to permissive, and registers DEFEX-bypass kprobes (Samsung-only; silently skipped on non-Samsung kernels like emerald). It then `call_usermodehelper`s `/system/bin/sh -c "<staged ksud> late-load ... "` and self-unloads by returning `-E2BIG` from init.
 
-6. **KernelSU daemon launched** — libc/libc++ patches are restored and crash_dump64 is fadvised out of cache.
+6. **ksud shim → ReSukiSU** — the staged `ksud` is a shell shim (see `app/src/main/assets/ksud`): it locates the ReSukiSU manager's `libksud.so` under `/data/app` and execs `ksud late-load --kmi <androidXX-Y.Y>`, which loads the ReSukiSU-built `kernelsu.ko` (LKM) and starts the daemon. Touches `/dev/dfm0` (success) or `/dev/dfm1` (failure) from the real `late-load` exit code.
+
+7. **Cleanup** — libc++ patches are restored and crash_dump64 is fadvised out of cache.
 
 ## Usage
 
-Install KernelSU Manager (download & unzip manager file) from actions flow: 
-https://github.com/tiann/KernelSU/actions/runs/35973514328
+Install the **[ReSukiSU manager](https://github.com/ReSukiSU/ReSukiSU/releases)** (`com.resukisu.resukisu`) — required. The shim uses its `libksud.so` + `kernelsu.ko`.
 
 ```sh
 ./build.sh
 adb install -r dirtyfrag.apk
 ```
 
+Open the app → **Root Device** → open the ReSukiSU manager to see root. Reboot clears `/dev/df` and re-enables the button (markers live on tmpfs `/dev`).
