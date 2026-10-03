@@ -1,47 +1,54 @@
-name: Build APK
+name: Build DFRoot APK
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
+    name: Build DFRoot APK
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout code
+      - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
 
-      - name: Accept Android Licenses & Pre-install NDK
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ""
+
+      - name: Install Android SDK packages
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager --install "ndk;30.0.16138531"
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-36"
+          sdkmanager "build-tools;35.0.0"
+          sdkmanager "cmake;3.22.1"
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses > /dev/null || true
 
-      - name: Grant execute permissions
+      - name: Make Gradle executable
+        run: chmod +x ./gradlew
+
+      - name: Build release APK
+        run: ./gradlew :app:assembleRelease --stacktrace
+
+      - name: Find and Prepare APK
         run: |
-          chmod +x gradlew || true
-          chmod +x build.sh || true
-
-      - name: Run Build
-        run: |
-          if [ -f "build.sh" ]; then
-            bash build.sh || ./gradlew assembleDebug
-          else
-            ./gradlew assembleDebug
-          fi
+          echo "Built APK files:"
+          find app/build/outputs -type f -name "*.apk" -print
+          mkdir -p output_apk
+          find app/build/outputs -type f -name "*.apk" -exec cp {} output_apk/ \;
 
       - name: Upload APK
-        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: compiled-apk
-          path: |
-            app/build/outputs/apk/**/*.apk
-            **/*.apk
+          name: DFRoot-Release-APK
+          path: output_apk/*.apk
