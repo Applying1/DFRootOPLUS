@@ -16,13 +16,6 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK & NDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install NDK and CMake
-        run: |
-          sdkmanager --install "ndk;26.1.10909125" "cmake;3.22.1"
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
@@ -31,8 +24,16 @@ jobs:
           chmod +x gradlew || true
           chmod +x build.sh || true
 
-      - name: Build APK
-        run: ./gradlew assembleDebug --stacktrace
+      - name: Run Build
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/26.1.10909125
+        run: |
+          if [ -f "build.sh" ]; then
+            bash build.sh || ./gradlew assembleDebug
+          else
+            ./gradlew assembleDebug
+          fi
 
       - name: Upload APK
         if: always()
