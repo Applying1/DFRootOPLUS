@@ -16,6 +16,11 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Accept Android Licenses & Pre-install NDK
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager --install "ndk;30.0.16138531"
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
@@ -25,9 +30,6 @@ jobs:
           chmod +x build.sh || true
 
       - name: Run Build
-        env:
-          ANDROID_HOME: /usr/local/lib/android/sdk
-          ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/26.1.10909125
         run: |
           if [ -f "build.sh" ]; then
             bash build.sh || ./gradlew assembleDebug
